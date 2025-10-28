@@ -15,6 +15,7 @@
 #include "credentials.h"
 #include "application.h"
 #include "MQTT.h"
+#include "neopixel.h"
 
 
 struct EAS_Struct {
@@ -53,13 +54,19 @@ bool shake, oldShake;
 bool connected;
 
 // Unique client ID per device
-String clientId = "photon2-" + System.deviceID();
+String mqttUsername = System.deviceID();
+String mqttPassword = MQTT_PASSWORD;
+String clientId = mqttUsername;
+uint16_t retainFlag = 1;
 //Command topic
-String cmd_topic = "bootcamp/" + String(MQTT_USERNAME) + "/+/command";
-// Last Will message
-String lwt_topic = "bootcamp/" + String(MQTT_USERNAME) + "/status";
+String pixel_cmd_topic = "bootcamp/" + mqttUsername + "/pixel/cmd";
+String pixel_state_topic = "bootcamp/" + mqttUsername + "/pixel";
+String struct_topic = "bootcamp/" + String(mqttUsername) + "/struct";
 void callback(char* topic, byte* payload, unsigned int length);
 void connectToMQTT();
+void publishPixelState(const char* state);
+void handlePixelCommand(char* message);
+uint32_t parseHexColor(char* hex);
 
 EAS_Struct EAS_Data;
 
@@ -73,11 +80,18 @@ Button vertButton(VERT_SW_PIN, TRUE);
 Adafruit_SSD1306 display(DISPLAY_RESET);
 
 MQTT client(MQTT_SERVER, MQTT_SERVERPORT, callback);
+Adafruit_NeoPixel pixel(1, SPI, WS2812B);
+
 
 void setup() {
   Serial.begin(9600);
   waitFor(Serial.isConnected, 10000);
   pinMode(DEBUG_LED_PIN, OUTPUT);
+
+  // Initialize NeoPixel
+  pixel.begin();
+  pixel.setBrightness(50);  // 0-255 (start dim)
+  pixel.show();  // Initialize all pixels to 'off'
 
   //Connect to WiFi without going to Particle Cloud
   WiFi.connect();
@@ -94,10 +108,8 @@ void setup() {
   connected = false;
   // Initialize MQTT connection
   connectToMQTT();
-  // Publish online status (retained)
-  client.publish(lwt_topic, "online", true);
   // Subscribe to command topics
-  client.subscribe(cmd_topic);
+  client.subscribe(pixel_cmd_topic);
  
   // Initialize encoders (this also attaches interrupts)
   horzEncoder.begin();
@@ -167,7 +179,7 @@ void loop() {
         EAS_Data.shake ? "true" : "false"
       );
 
-      client.publish("demo/" + String(MQTT_USERNAME) + "/struct", payload);
+      client.publish(struct_topic, payload);
       mqttCount++;
     }
 
@@ -178,51 +190,70 @@ void loop() {
 }
 
   void callback(char* topic, byte* payload, unsigned int length) {
-      char msg[length + 1];
-      memcpy(msg, payload, length);
-      msg[length] = '\0';
+    // Convert payload to string
+    char message[length + 1];
+    memcpy(message, payload, length);
+    message[length] = '\0';
 
-      Serial.printf("Message arrived on %s: %s\n", topic, msg);
+    Serial.printf("📩 Received on %s: %s\n", topic, message);
 
-      // Handle LED control
-      if (strcmp(topic, "bootcamp/" + String(MQTT_USERNAME) + "/led/command") == 0) {
-          if (strcmp(msg, "ON") == 0) {
-              digitalWrite(D7, HIGH);
-          } else {
-              digitalWrite(D7, LOW);
-          }
-      }
+    // Check if this is the pixel command topic
+    if (strcmp(topic, pixel_cmd_topic.c_str()) == 0) {
+      handlePixelCommand(message);
+    }
+  }
+
+  // Parse and execute pixel commands
+  void handlePixelCommand(char* message) {
+    // Option 1: Simple color names
+    if (message[0] == '#' && strlen(message) == 7) {
+      uint32_t color = parseHexColor(message);
+      pixel.setPixelColor(0, color);
+      pixel.show();
+      publishPixelState(message);
+    } else {
+      Serial.printf("❌ Unknown pixel command: %s\n", message);
+    }
+  }
+
+  void publishPixelState(const char* state) {
+    client.publish(pixel_state_topic, state, true);  // retained
+    Serial.printf("✅ Pixel state: %s\n", state);
+  }
+
+  // Parse hex color string "#RRGGBB" to uint32_t
+  uint32_t parseHexColor(char* hex) {
+    // Skip the '#'
+    char* str = hex + 1;
+
+    // Convert hex string to RGB values
+    long color = strtol(str, NULL, 16);
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+
+    return pixel.Color(r, g, b);
   }
 
   // Recommended connection pattern for bootcamp
   void connectToMQTT() {
-      // Unique client ID per device
-      String clientId = "photon2-" + System.deviceID();
-
-      // Attempt connection with LWT
-      // bool connected = client.connect(MQTT_SERVER, MQTT_USERNAME, MQTT_PASSWORD, lwt_topic, MQTT::QOS1, true, "offline");
-      // bool connected = client.connect(MQTT_SERVER, MQTT_USERNAME, MQTT_PASSWORD);
-      // bool connected = client.connect(MQTT_SERVER);
-      // if (connected) {
-      //   Serial.println("MQTT Connected!");
-      // } else {
-      //   Serial.println("MQTT NOT Connected!");
-      // }
-      uint64_t lastTime = 0;
-      unsigned long mqttDelay = 1000;
-      do{
-        if(millis() - lastTime > mqttDelay) {
-        connected = client.connect(MQTT_SERVER);
-          if (connected) {
-            Serial.println("MQTT Connected!");
-          } else {
-            Serial.printf("MQTT NOT Connected! Try %d\n", mqttCount++);
-          }
-          lastTime = millis();
-        } 
-      }while(!connected);
-      // TODO - add subscriptions here
-      // client.subcribe();
-      mqttCount = 0;
+    uint64_t lastTime = 0;
+    unsigned long mqttDelay = 1000;
+      if(millis() - lastTime > mqttDelay) {
+      connected = client.connect(MQTT_SERVER, mqttUsername, MQTT_PASSWORD);
+       if (connected) {
+        Serial.println("MQTT Connected!");
+        pixel.setPixelColor(0, 0x00FF00);
+        pixel.show();
+        mqttCount = 0;
+      } else {
+        Serial.printf("MQTT NOT Connected! Try %d\n", mqttCount++);
+        pixel.setPixelColor(0, 0xFF0000);
+        pixel.show();
+      }
+      lastTime = millis();
+    } 
+    // TODO - add subscriptions here
+    // client.subcribe();
 
   }

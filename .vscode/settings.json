@@ -2,7 +2,8 @@
     "extensions.ignoreRecommendations": true,
     "C_Cpp.default.configurationProvider": "particle.particle-vscode-core",
     "files.associations": {
-        "*.ino": "cpp"
+        "*.ino": "cpp",
+        "system_error": "cpp"
     },
     "particle.firmwareVersion": "6.3.3"
 }
