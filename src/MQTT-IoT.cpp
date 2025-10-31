@@ -60,6 +60,7 @@ String clientId = mqttUsername;
 uint16_t retainFlag = 1;
 //Command topic
 String pixel_cmd_topic = "bootcamp/" + mqttUsername + "/pixel/cmd";
+String led_cmd_topic = "bootcamp/" + mqttUsername + "/led/cmd";
 String pixel_state_topic = "bootcamp/" + mqttUsername + "/pixel";
 String struct_topic = "bootcamp/" + String(mqttUsername) + "/struct";
 void callback(char* topic, byte* payload, unsigned int length);
@@ -87,10 +88,12 @@ void setup() {
   Serial.begin(9600);
   waitFor(Serial.isConnected, 10000);
   pinMode(DEBUG_LED_PIN, OUTPUT);
+  digitalWrite(DEBUG_LED_PIN, LOW);
 
   // Initialize NeoPixel
   pixel.begin();
   pixel.setBrightness(50);  // 0-255 (start dim)
+  pixel.setPixelColor(0, 0x0000FF);
   pixel.show();  // Initialize all pixels to 'off'
 
   //Connect to WiFi without going to Particle Cloud
@@ -110,6 +113,7 @@ void setup() {
   connectToMQTT();
   // Subscribe to command topics
   client.subscribe(pixel_cmd_topic);
+  client.subscribe(led_cmd_topic);
  
   // Initialize encoders (this also attaches interrupts)
   horzEncoder.begin();
@@ -120,6 +124,8 @@ void setup() {
 
   digitalWrite(HORZ_LED_PIN, LOW);
   digitalWrite(VERT_LED_PIN, LOW);
+
+
 
   shake = false;
   oldShake = false;
@@ -200,6 +206,14 @@ void loop() {
     // Check if this is the pixel command topic
     if (strcmp(topic, pixel_cmd_topic.c_str()) == 0) {
       handlePixelCommand(message);
+    } else if (strcmp(topic, led_cmd_topic.c_str()) == 0) {
+      if (strcmp(message, "1") == 0) {
+        digitalWrite(DEBUG_LED_PIN, HIGH);  // Turn LED ON
+        Serial.println("D7 LED on");
+      } else if (strcmp(message, "0") == 0) {
+        digitalWrite(DEBUG_LED_PIN, LOW);   // Turn LED OFF
+        Serial.println("D7 LED off");
+      }
     }
   }
 
@@ -238,13 +252,15 @@ void loop() {
   // Recommended connection pattern for bootcamp
   void connectToMQTT() {
     uint64_t lastTime = 0;
-    unsigned long mqttDelay = 1000;
+    unsigned long mqttDelay = 2000;
       if(millis() - lastTime > mqttDelay) {
       connected = client.connect(MQTT_SERVER, mqttUsername, MQTT_PASSWORD);
        if (connected) {
         Serial.println("MQTT Connected!");
         pixel.setPixelColor(0, 0x00FF00);
         pixel.show();
+        client.subscribe(pixel_cmd_topic);
+        client.subscribe(led_cmd_topic);
         mqttCount = 0;
       } else {
         Serial.printf("MQTT NOT Connected! Try %d\n", mqttCount++);
@@ -253,7 +269,4 @@ void loop() {
       }
       lastTime = millis();
     } 
-    // TODO - add subscriptions here
-    // client.subcribe();
-
   }
