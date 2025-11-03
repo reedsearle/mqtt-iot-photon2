@@ -254,7 +254,8 @@ void loop() {
     uint64_t lastTime = 0;
     unsigned long mqttDelay = 2000;
       if(millis() - lastTime > mqttDelay) {
-      connected = client.connect(MQTT_SERVER, mqttUsername, MQTT_PASSWORD);
+      // connected = client.connect(MQTT_SERVER, mqttUsername, MQTT_PASSWORD);
+      connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD);
        if (connected) {
         Serial.println("MQTT Connected!");
         pixel.setPixelColor(0, 0x00FF00);
