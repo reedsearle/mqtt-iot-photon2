@@ -5,5 +5,6 @@
         "*.ino": "cpp",
         "system_error": "cpp"
     },
-    "particle.firmwareVersion": "6.3.3"
+    "particle.firmwareVersion": "6.3.3",
+    "particle.targetPlatform": "argon"
 }

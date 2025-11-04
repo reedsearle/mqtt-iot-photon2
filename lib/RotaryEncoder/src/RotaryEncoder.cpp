@@ -36,8 +36,12 @@ void RotaryEncoder::begin() {
   pinMode(pinB, INPUT_PULLUP);
 
   // Read initial state
-  bool a = digitalRead(pinA);
-  bool b = digitalRead(pinB);
+  // Original code for Photon 2:
+  // bool a = digitalRead(pinA);
+  // bool b = digitalRead(pinB);
+  // Argon-compatible code (uses int instead of bool):
+  int a = digitalRead(pinA);
+  int b = digitalRead(pinB);
   state = (a << 1) | b;
 
   // Attach interrupts based on which instance this is
@@ -67,8 +71,12 @@ void RotaryEncoder::setPosition(int newPos) {
 // Handle encoder state change (call from ISR)
 void RotaryEncoder::update() {
   // Read current pin states
-  bool a = digitalRead(pinA);
-  bool b = digitalRead(pinB);
+  // Original code for Photon 2:
+  // bool a = digitalRead(pinA);
+  // bool b = digitalRead(pinB);
+  // Argon-compatible code (uses int instead of bool):
+  int a = digitalRead(pinA);
+  int b = digitalRead(pinB);
 
   // Combine A and B into a 2-bit value (0-3)
   uint8_t newState = (a << 1) | b;
