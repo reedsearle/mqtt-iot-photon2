@@ -11,7 +11,6 @@
 #include "Button.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
-// #include "../lib/RotaryEncoder/RotaryEncoder.h"  // Commented out - use standard library include instead
 #include "RotaryEncoder.h"  // Fixed: Use standard library include for Particle build system
 #include "credentials.h"
 #include "application.h"
@@ -35,29 +34,29 @@ const int DISPLAY_WIDTH = 128;
 const int DISPLAY_HEIGHT = 64;
 
 // Pin assignments for Photon 2
-// const int HORZ_A_PIN = D8;
-// const int HORZ_B_PIN = D9;
+const int HORZ_A_PIN = D8;
+const int HORZ_B_PIN = D9;
 
-// const int VERT_A_PIN = D2;
-// const int VERT_B_PIN = D3;
+const int VERT_A_PIN = D2;
+const int VERT_B_PIN = D3;
 
-// const int HORZ_SW_PIN = D10;
-// const int VERT_SW_PIN = D5;
-// const int HORZ_LED_PIN = D6; 
-// const int VERT_LED_PIN = D4; 
+const int HORZ_SW_PIN = D10;
+const int VERT_SW_PIN = D5;
+const int HORZ_LED_PIN = D6; 
+const int VERT_LED_PIN = D4; 
 
-// Pin assignemnts for Argon
-const int HORZ_A_PIN = D2;
-const int HORZ_B_PIN = D3;
+// Pin assignments for Argon
+// const int HORZ_A_PIN = D2;
+// const int HORZ_B_PIN = D3;
 
-const int VERT_A_PIN = D6;
-const int VERT_B_PIN = D7;
+// const int VERT_A_PIN = D6;
+// const int VERT_B_PIN = D7;
 
-const int HORZ_SW_PIN = D4;
-const int NEOPIXEL_PIN = A0;
-const int VERT_SW_PIN = D8;
-const int HORZ_LED_PIN = D9; 
-const int VERT_LED_PIN = D10; 
+// const int HORZ_SW_PIN = D4;
+// const int NEOPIXEL_PIN = A0;
+// const int VERT_SW_PIN = D8;
+// const int HORZ_LED_PIN = D9; 
+// const int VERT_LED_PIN = D10; 
 
 int horzPosNew;
 int vertPosNew;
@@ -96,9 +95,10 @@ Button vertButton(VERT_SW_PIN, TRUE);
 Adafruit_SSD1306 display(DISPLAY_RESET);
 
 MQTT client(MQTT_SERVER, MQTT_SERVERPORT, callback);
-Adafruit_NeoPixel pixel(24, NEOPIXEL_PIN, WS2812B);
-// TODO uncomment for Photon 2
-// Adafruit_NeoPixel pixel(1, SPI, WS2812B);
+// Photon 2 Constructor
+Adafruit_NeoPixel pixel(1, SPI, WS2812B);
+// Argon Constructor
+// Adafruit_NeoPixel pixel(24, NEOPIXEL_PIN, WS2812B);
 
 
 void setup() {
@@ -114,7 +114,8 @@ void setup() {
   pixel.show();  // Initialize all pixels to 'off'
 
   //Connect to WiFi without going to Particle Cloud
-  WiFi.setCredentials("hollyhouse", "AsylumJavelinMirage");
+  // Wifi credentials for Argon
+  // WiFi.setCredentials("hollyhouse", "Type real password here");
   WiFi.connect();
   while(WiFi.connecting()) {
     Serial.printf(".");
