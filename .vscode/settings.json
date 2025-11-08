@@ -6,5 +6,5 @@
         "system_error": "cpp"
     },
     "particle.firmwareVersion": "6.3.3",
-    "particle.targetPlatform": "argon"
+    "particle.targetPlatform": "p2"
 }

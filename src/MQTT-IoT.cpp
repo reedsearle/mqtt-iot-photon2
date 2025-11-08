@@ -19,9 +19,9 @@
 
 
 struct EAS_Struct {
-  int horizontal;
-  int vertical;
-  bool shake;
+  int x;
+  int y;
+  bool clear;
 };
 
 SYSTEM_MODE(SEMI_AUTOMATIC);
@@ -34,16 +34,14 @@ const int DISPLAY_WIDTH = 128;
 const int DISPLAY_HEIGHT = 64;
 
 // Pin assignments for Photon 2
-const int HORZ_A_PIN = D8;
-const int HORZ_B_PIN = D9;
+const int HORZ_A_PIN = D9;
+const int HORZ_B_PIN = D8;
 
-const int VERT_A_PIN = D2;
-const int VERT_B_PIN = D3;
+const int VERT_A_PIN = D3;
+const int VERT_B_PIN = D4;
 
-const int HORZ_SW_PIN = D10;
-const int VERT_SW_PIN = D5;
-const int HORZ_LED_PIN = D6; 
-const int VERT_LED_PIN = D4; 
+const int CENTER_PIN = D19;
+const int CLEAR_PIN = D5;
 
 // Pin assignments for Argon
 // const int HORZ_A_PIN = D2;
@@ -55,8 +53,6 @@ const int VERT_LED_PIN = D4;
 // const int HORZ_SW_PIN = D4;
 // const int NEOPIXEL_PIN = A0;
 // const int VERT_SW_PIN = D8;
-// const int HORZ_LED_PIN = D9; 
-// const int VERT_LED_PIN = D10; 
 
 int horzPosNew;
 int vertPosNew;
@@ -73,10 +69,12 @@ String mqttPassword = MQTT_PASSWORD;
 String clientId = mqttUsername;
 uint16_t retainFlag = 1;
 //Command topic
-String pixel_cmd_topic = "bootcamp/" + mqttUsername + "/pixel/cmd";
-String led_cmd_topic = "bootcamp/" + mqttUsername + "/led/cmd";
-String pixel_state_topic = "bootcamp/" + mqttUsername + "/pixel";
+String status_topic = "bootcamp/" + String(mqttUsername) + "/status";
+String pixel_cmd_topic = "bootcamp/" + String(mqttUsername) + "/pixel/cmd";
+String led_cmd_topic = "bootcamp/" + String(mqttUsername) + "/led/cmd";
+String pixel_state_topic = "bootcamp/" + String(mqttUsername) + "/pixel";
 String struct_topic = "bootcamp/" + String(mqttUsername) + "/struct";
+String tempf_topic = "bootcamp/" + String(mqttUsername) + "/tempf";
 void callback(char* topic, byte* payload, unsigned int length);
 void connectToMQTT();
 void publishPixelState(const char* state);
@@ -89,8 +87,8 @@ EAS_Struct EAS_Data;
 RotaryEncoder horzEncoder(HORZ_A_PIN, HORZ_B_PIN, 0, DISPLAY_WIDTH, DISPLAY_WIDTH / 2);
 RotaryEncoder vertEncoder(VERT_A_PIN, VERT_B_PIN, 0, DISPLAY_HEIGHT, DISPLAY_HEIGHT / 2);
 
-Button horzButton(HORZ_SW_PIN, TRUE);
-Button vertButton(VERT_SW_PIN, TRUE);
+Button horzButton(CENTER_PIN, TRUE);
+Button vertButton(CLEAR_PIN, TRUE);
 
 Adafruit_SSD1306 display(DISPLAY_RESET);
 
@@ -100,7 +98,9 @@ Adafruit_NeoPixel pixel(1, SPI, WS2812B);
 // Argon Constructor
 // Adafruit_NeoPixel pixel(24, NEOPIXEL_PIN, WS2812B);
 
-
+/* ********************
+**  SETUP 
+*/
 void setup() {
   Serial.begin(9600);
   waitFor(Serial.isConnected, 10000);
@@ -138,18 +138,13 @@ void setup() {
   horzEncoder.begin();
   vertEncoder.begin();
 
-  pinMode(HORZ_LED_PIN, OUTPUT);
-  pinMode(VERT_LED_PIN, OUTPUT);
-
-  digitalWrite(HORZ_LED_PIN, LOW);
-  digitalWrite(VERT_LED_PIN, LOW);
-
-
-
   shake = false;
   oldShake = false;
 }
 
+/* ********************
+**  LOOP 
+*/
 void loop() {
   if(connected) {
     client.loop();
@@ -165,23 +160,17 @@ void loop() {
     vertPosNew = DISPLAY_HEIGHT / 2;
     horzEncoder.setPosition(horzPosNew);
     vertEncoder.setPosition(vertPosNew);
-
-    digitalWrite(HORZ_LED_PIN, HIGH);
   } else {
     // Get current positions from encoders
     horzPosNew = horzEncoder.getPosition();
     vertPosNew = vertEncoder.getPosition();
-
-    digitalWrite(HORZ_LED_PIN, LOW);
   }
 
   if(vertButton.isClicked()) {
     display.clearDisplay();
     display.display();
-    digitalWrite(VERT_LED_PIN, HIGH);
     shake = true;
   } else {
-    digitalWrite(VERT_LED_PIN, LOW);
     shake = false;
   }
 
@@ -191,20 +180,23 @@ void loop() {
     vertPosOld = vertPosNew;
     oldShake = shake;
 
-    EAS_Data.horizontal = horzPosNew;
-    EAS_Data.vertical = vertPosNew;
-    EAS_Data.shake = shake;
+    EAS_Data.x = horzPosNew;
+    EAS_Data.y = vertPosNew;
+    EAS_Data.clear = shake;
 
     if(client.isConnected()) {
 
-      String payload = String::format(
-        "{\"horizontal\":%d,\"vertical\":%d,\"shake\":%s}",
-        EAS_Data.horizontal,
-        EAS_Data.vertical,
-        EAS_Data.shake ? "true" : "false"
+      String structPayload = String::format(
+        "{\"x\":%d,\"y\":%d,\"clear\":%s}",
+        EAS_Data.x,
+        EAS_Data.y,
+        EAS_Data.clear ? "true" : "false"
       );
 
-      client.publish(struct_topic, payload);
+      String tempfPayload = String(horzPosNew);
+
+      client.publish(struct_topic, structPayload);
+      client.publish(tempf_topic, tempfPayload);
       mqttCount++;
     }
 
@@ -273,12 +265,23 @@ void loop() {
     uint64_t lastTime = 0;
     unsigned long mqttDelay = 2000;
       if(millis() - lastTime > mqttDelay) {
-      // connected = client.connect(MQTT_SERVER, mqttUsername, MQTT_PASSWORD);
-      connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD);
-       if (connected) {
+        connected = client.connect(
+          clientId,           // client ID
+          mqttUsername,       // username (NULL if no auth)
+          MQTT_PASSWORD,      // password (NULL if no auth)
+          status_topic,       // LWT topic
+          MQTT::QOS1,           // LWT QoS (QOS0, QOS1, or QOS2)
+          1,                     // LWT retain (1 = true, 0 = false)
+          "offline",            // LWT message
+          true                 // clean session
+        );
+      // connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD, status_topic, MQTT::QoS1, true, "offline");
+      // connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD);
+      if (connected) {
         Serial.println("MQTT Connected!");
         pixel.setPixelColor(0, 0x00FF00);
         pixel.show();
+        client.publish(status_topic, "online", true);
         client.subscribe(pixel_cmd_topic);
         client.subscribe(led_cmd_topic);
         mqttCount = 0;
