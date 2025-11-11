@@ -159,6 +159,7 @@ void loop() {
 
   static int horzPosOld = -999;
   static int vertPosOld = -999;
+  static int lastTime = 0;
 
   if(centerButton.isClicked()) {
     horzPosNew = DISPLAY_WIDTH / 2;
@@ -167,8 +168,15 @@ void loop() {
     vertEncoder.setPosition(vertPosNew);
   } else {
     // Get current positions from encoders
-    horzPosNew = horzEncoder.getPosition();
+    // horzPosNew = horzEncoder.getPosition();
     vertPosNew = vertEncoder.getPosition();
+  if(millis() - 1000 > lastTime) {
+    horzPosNew++;
+    if(horzPosNew > 128) {
+      horzPosNew = 0;
+    }
+    lastTime = millis();
+  }
   }
 
   // Rate Limit Test.  DO NOT USE IN REGULAR CODE!
