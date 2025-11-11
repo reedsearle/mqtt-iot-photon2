@@ -16,6 +16,7 @@
 #include "application.h"
 #include "MQTT.h"
 #include "neopixel.h"
+#include <math.h>
 
 
 struct EAS_Struct {
@@ -34,14 +35,14 @@ const int DISPLAY_WIDTH = 128;
 const int DISPLAY_HEIGHT = 64;
 
 // Pin assignments for Photon 2
-const int HORZ_A_PIN = D9;
-const int HORZ_B_PIN = D8;
+const int HORZ_A_PIN = A0;
+const int HORZ_B_PIN = A1;
 
 const int VERT_A_PIN = D3;
 const int VERT_B_PIN = D4;
 
-const int CENTER_PIN = D19;
-const int CLEAR_PIN = D5;
+const int CENTER_PIN = D5;
+const int CLEAR_PIN = D19;
 
 // Pin assignments for Argon
 // const int HORZ_A_PIN = D2;
@@ -54,9 +55,11 @@ const int CLEAR_PIN = D5;
 // const int NEOPIXEL_PIN = A0;
 // const int VERT_SW_PIN = D8;
 
+//TODO change back to int
 int horzPosNew;
 int vertPosNew;
 
+int pixelColor;
 int mqttCount;
 
 bool shake, oldShake;
@@ -75,10 +78,12 @@ String led_cmd_topic = "bootcamp/" + String(mqttUsername) + "/led/cmd";
 String pixel_state_topic = "bootcamp/" + String(mqttUsername) + "/pixel";
 String struct_topic = "bootcamp/" + String(mqttUsername) + "/struct";
 String tempf_topic = "bootcamp/" + String(mqttUsername) + "/tempf";
+String tempc_topic = "bootcamp/" + String(mqttUsername) + "/tempc";
 void callback(char* topic, byte* payload, unsigned int length);
 void connectToMQTT();
 void publishPixelState(const char* state);
 void handlePixelCommand(char* message);
+boolean mqttConnected();
 uint32_t parseHexColor(char* hex);
 
 EAS_Struct EAS_Data;
@@ -87,8 +92,8 @@ EAS_Struct EAS_Data;
 RotaryEncoder horzEncoder(HORZ_A_PIN, HORZ_B_PIN, 0, DISPLAY_WIDTH, DISPLAY_WIDTH / 2);
 RotaryEncoder vertEncoder(VERT_A_PIN, VERT_B_PIN, 0, DISPLAY_HEIGHT, DISPLAY_HEIGHT / 2);
 
-Button horzButton(CENTER_PIN, TRUE);
-Button vertButton(CLEAR_PIN, TRUE);
+Button centerButton(CENTER_PIN, TRUE);
+Button clearButton(CLEAR_PIN, TRUE);
 
 Adafruit_SSD1306 display(DISPLAY_RESET);
 
@@ -147,7 +152,7 @@ void setup() {
 */
 void loop() {
   if(connected) {
-    client.loop();
+    connected = client.loop();
   } else {
     connectToMQTT();
   }
@@ -155,7 +160,7 @@ void loop() {
   static int horzPosOld = -999;
   static int vertPosOld = -999;
 
-  if(horzButton.isClicked()) {
+  if(centerButton.isClicked()) {
     horzPosNew = DISPLAY_WIDTH / 2;
     vertPosNew = DISPLAY_HEIGHT / 2;
     horzEncoder.setPosition(horzPosNew);
@@ -166,7 +171,15 @@ void loop() {
     vertPosNew = vertEncoder.getPosition();
   }
 
-  if(vertButton.isClicked()) {
+  // Rate Limit Test.  DO NOT USE IN REGULAR CODE!
+//   uint16_t startTime = millis();
+// for(int i = 0; i < 100; i++) {
+//   client.publish(tempf_topic, String(i));
+// }
+//   Serial.printf("start time: %i, endTime%i, time to publish 100 values: %i\n", startTime, millis(), millis() - startTime);
+// delay(100);
+
+  if(clearButton.isClicked()) {
     display.clearDisplay();
     display.display();
     shake = true;
@@ -194,9 +207,11 @@ void loop() {
       );
 
       String tempfPayload = String(horzPosNew);
+      String tempcPayload = String(vertPosNew);
 
       client.publish(struct_topic, structPayload);
       client.publish(tempf_topic, tempfPayload);
+      client.publish(tempc_topic, tempcPayload);
       mqttCount++;
     }
 
@@ -219,10 +234,14 @@ void loop() {
       handlePixelCommand(message);
     } else if (strcmp(topic, led_cmd_topic.c_str()) == 0) {
       if (strcmp(message, "1") == 0) {
-        digitalWrite(DEBUG_LED_PIN, HIGH);  // Turn LED ON
+        // digitalWrite(DEBUG_LED_PIN, HIGH);  // Turn LED ON
+        pixel.setPixelColor(0, 0x0000FF);
+        pixel.show();
         Serial.println("D7 LED on");
       } else if (strcmp(message, "0") == 0) {
-        digitalWrite(DEBUG_LED_PIN, LOW);   // Turn LED OFF
+        // digitalWrite(DEBUG_LED_PIN, LOW);   // Turn LED OFF
+        pixel.setPixelColor(0, pixelColor);
+        pixel.show();
         Serial.println("D7 LED off");
       }
     }
@@ -262,34 +281,37 @@ void loop() {
 
   // Recommended connection pattern for bootcamp
   void connectToMQTT() {
-    uint64_t lastTime = 0;
+    static uint64_t lastTime = 0;
     unsigned long mqttDelay = 2000;
-      if(millis() - lastTime > mqttDelay) {
-        connected = client.connect(
-          clientId,           // client ID
-          mqttUsername,       // username (NULL if no auth)
-          MQTT_PASSWORD,      // password (NULL if no auth)
-          status_topic,       // LWT topic
-          MQTT::QOS1,           // LWT QoS (QOS0, QOS1, or QOS2)
-          1,                     // LWT retain (1 = true, 0 = false)
-          "offline",            // LWT message
-          true                 // clean session
-        );
-      // connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD, status_topic, MQTT::QoS1, true, "offline");
-      // connected = client.connect(clientId, mqttUsername, MQTT_PASSWORD);
+    if(millis() - lastTime > mqttDelay) {
+      connected = mqttConnected();
       if (connected) {
         Serial.println("MQTT Connected!");
-        pixel.setPixelColor(0, 0x00FF00);
-        pixel.show();
+        pixelColor = 0x00FF00;
         client.publish(status_topic, "online", true);
         client.subscribe(pixel_cmd_topic);
         client.subscribe(led_cmd_topic);
         mqttCount = 0;
       } else {
         Serial.printf("MQTT NOT Connected! Try %d\n", mqttCount++);
-        pixel.setPixelColor(0, 0xFF0000);
-        pixel.show();
+        pixelColor = 0xFF0000;
       }
+      pixel.setPixelColor(0, pixelColor);
+      pixel.show();
       lastTime = millis();
     } 
   }
+
+boolean mqttConnected() {
+  return client.connect(
+    clientId,           // client ID
+    mqttUsername,       // username (NULL if no auth)
+    MQTT_PASSWORD,      // password (NULL if no auth)
+    status_topic,       // LWT topic
+    MQTT::QOS1,           // LWT QoS (QOS0, QOS1, or QOS2)
+    1,                     // LWT retain (1 = true, 0 = false)
+    "offline",            // LWT message
+    true                 // clean session
+  );
+
+}
